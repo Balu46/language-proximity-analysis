@@ -10,6 +10,7 @@ from typing import Tuple, List, Dict
 
 from src.logger.logging_config import setup_logger
 from src.embedding_service.embeding.cbow import CBOWModel
+from src.embedding_service.run_train_data_pipeline import run_pipeline
 
 # Set up logger
 logger = setup_logger(__name__, "word_comparison.log")
@@ -380,11 +381,12 @@ class WordComparator:
         }
 
 
-def main(word1: str, lang1: str, word2: str, lang2: str, 
+def run_word_comparison(word1: str, lang1: str, word2: str, lang2: str, 
          phoneme_model_path: str = None, word_model_path: str = None, 
          data_dir: str = 'data', device: str = 'cpu'):
     """
     Compare words across languages using trained CBOW embeddings.
+    Ensures required language data is present, triggering the pipeline if needed.
     
     Args:
         word1: First word
@@ -405,6 +407,27 @@ def main(word1: str, lang1: str, word2: str, lang2: str,
         # If relative path provided, resolve from project root
         data_dir = os.path.join(project_root, data_dir.lstrip('./'))
     
+    
+    def language_data_available(lang: str, d_dir: str) -> bool:
+        lang_dir = os.path.join(d_dir, lang)
+        phoneme_file = os.path.join(lang_dir, "phonemes.txt")
+        return os.path.isdir(lang_dir) and os.path.isfile(phoneme_file)
+
+    missing_langs = [l for l in {lang1, lang2} if not language_data_available(l, data_dir)]
+    if missing_langs:
+        logger.info(f"Missing data for languages {missing_langs} in {data_dir}. Running pipeline.")
+        try:
+            run_pipeline(languages=None)
+        except Exception as e:
+            logger.error(f"Pipeline failed while preparing languages {missing_langs}: {e}")
+            return
+
+        still_missing = [l for l in missing_langs if not language_data_available(l, data_dir)]
+        if still_missing:
+            logger.error(f"Data for languages {still_missing} still missing after pipeline run.")
+            return
+        logger.info(f"Data for languages {missing_langs} prepared successfully.")
+
     
     def discover_models(l1, l2, d_dir):
         # This duplicates logic from WordComparator.find_models_for_languages
@@ -488,4 +511,4 @@ def main(word1: str, lang1: str, word2: str, lang2: str,
 
 if __name__ == "__main__":
     # Example usage with auto-discovery
-    main(word1='kot', lang1='pl', word2='cat', lang2='en')
+    run_word_comparison(word1='kot', lang1='pl', word2='cat', lang2='en')
