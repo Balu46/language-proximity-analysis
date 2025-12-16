@@ -21,20 +21,54 @@ class WordComparator:
     Compare words across languages using CBOW embeddings.
     """
     
-    def __init__(self, phoneme_model_path: str, word_model_path: str, device: str = 'cpu'):
+    
+    def __init__(self, phoneme_model_path: str | None = None, word_model_path: str | None = None, 
+                 languages: List[str] | None = None, data_dir: str = 'data', device: str = 'auto'):
         """
         Initialize the comparator with trained phoneme and word models.
         
         Args:
-            phoneme_model_path: Path to the trained phoneme model (.pt file)
-            word_model_path: Path to the trained word model (.pt file)
-            device: Device to run on ('cpu' or 'cuda')
+            phoneme_model_path: Path to the trained phoneme model (.pt file), default: None - then auto-discover
+            word_model_path: Path to the trained word model (.pt file) default: None - then auto-discover
+            languages: List of languages to support (required if models are not provided)
+            data_dir: Data directory path (default: 'data')
+            device: Device to run on ('cpu' or 'cuda' or 'auto')
         """
-        self.device = device
+        if device == 'auto':
+            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        else:   
+            self.device = device
+            
+        # Resolve data_dir to absolute path if needed
+        if not os.path.isabs(data_dir):
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(os.path.dirname(script_dir))
+            data_dir = os.path.join(project_root, data_dir.lstrip('./'))
+        
+        if phoneme_model_path is None or word_model_path is None:
+            if languages is None:
+                raise ValueError("If model paths are not provided, 'languages' list must be specified.")
+            
+            logger.info(f"[INFO] Model paths not provided. Auto-discovering for languages: {languages}")
+            
+            # Ensure data availability using data pipeline
+            logger.info("[INFO] Ensuring phoneme data is available...")
+            run_data_pipeline(languages)
+            
+            # Auto-discover models
+            found_models = self.find_models_for_languages(languages, data_dir)
+            
+            if found_models:
+                phoneme_model_path, word_model_path = found_models
+                logger.info(f"[INFO] Auto-discovered models:\n  Phoneme: {phoneme_model_path}\n  Word: {word_model_path}")
+            else:
+                raise FileNotFoundError(f"Could not find suitable models for languages: {languages}")
+
+        # Load phoneme model
         
         # Load phoneme model
-        logger.info(f"Loading phoneme model from {phoneme_model_path}")
-        phoneme_checkpoint = torch.load(phoneme_model_path, map_location=device)
+        logger.info(f"[INFO] Loading phoneme model from {phoneme_model_path}")
+        phoneme_checkpoint = torch.load(phoneme_model_path, map_location=self.device)
         
         self.phoneme_vocab_size = phoneme_checkpoint['vocab_size']
         self.phoneme_embedding_dim = phoneme_checkpoint['embedding_dim']
@@ -43,14 +77,14 @@ class WordComparator:
         
         self.phoneme_model = CBOWModel(self.phoneme_vocab_size, self.phoneme_embedding_dim)
         self.phoneme_model.load_state_dict(phoneme_checkpoint['model_state_dict'])
-        self.phoneme_model.to(device)
+        self.phoneme_model.to(self.device)
         self.phoneme_model.eval()
         
-        logger.info(f"Phoneme model loaded. Vocab size: {self.phoneme_vocab_size}, Embedding dim: {self.phoneme_embedding_dim}")
+        logger.info(f"[INFO] Phoneme model loaded. Vocab size: {self.phoneme_vocab_size}, Embedding dim: {self.phoneme_embedding_dim}")
         
         # Load word model
-        logger.info(f"Loading word model from {word_model_path}")
-        word_checkpoint = torch.load(word_model_path, map_location=device)
+        logger.info(f"[INFO] Loading word model from {word_model_path}")
+        word_checkpoint = torch.load(word_model_path, map_location=self.device)
         
         self.word_vocab_size = word_checkpoint['vocab_size']
         self.word_embedding_dim = word_checkpoint['embedding_dim']
@@ -59,14 +93,14 @@ class WordComparator:
         
         self.word_model = CBOWModel(self.word_vocab_size, self.word_embedding_dim)
         self.word_model.load_state_dict(word_checkpoint['model_state_dict'])
-        self.word_model.to(device)
+        self.word_model.to(self.device)
         self.word_model.eval()
         
-        logger.info(f"Word model loaded. Vocab size: {self.word_vocab_size}, Embedding dim: {self.word_embedding_dim}")
+        logger.info(f"[INFO] Word model loaded. Vocab size: {self.word_vocab_size}, Embedding dim: {self.word_embedding_dim}")
         
         # Combined embedding dimension
         self.combined_embedding_dim = self.phoneme_embedding_dim + self.word_embedding_dim
-        logger.info(f"Combined embedding dimension: {self.combined_embedding_dim}")
+        logger.info(f"[INFO] Combined embedding dimension: {self.combined_embedding_dim}")
     
     def phonemes_to_embedding(self, phonemes: List[str]) -> np.ndarray:
         """
@@ -86,9 +120,9 @@ class WordComparator:
                 idx = self.phoneme_to_idx[phoneme]
             elif unk_idx is not None:
                 idx = unk_idx
-                logger.warning(f"Phoneme '{phoneme}' not in vocabulary, using <UNK>")
+                logger.warning(f"[WARNING] Phoneme '{phoneme}' not in vocabulary, using <UNK>")
             else:
-                logger.warning(f"Phoneme '{phoneme}' not in vocabulary, skipping")
+                logger.warning(f"[WARNING] Phoneme '{phoneme}' not in vocabulary, skipping")
                 continue
             
             # Get embedding
@@ -98,7 +132,7 @@ class WordComparator:
             embeddings.append(embedding)
         
         if not embeddings:
-            logger.warning("No valid phonemes found, returning zero vector")
+            logger.warning("[WARNING] No valid phonemes found, returning zero vector")
             return np.zeros(self.phoneme_embedding_dim)
         
         # Average all phoneme embeddings
@@ -122,9 +156,9 @@ class WordComparator:
                 idx = self.char_to_idx[char]
             elif unk_idx is not None:
                 idx = unk_idx
-                logger.warning(f"Character '{char}' not in vocabulary, using <UNK>")
+                logger.warning(f"[WARNING] Character '{char}' not in vocabulary, using <UNK>")
             else:
-                logger.warning(f"Character '{char}' not in vocabulary, skipping")
+                logger.warning(f"[WARNING] Character '{char}' not in vocabulary, skipping")
                 continue
             
             # Get embedding
@@ -134,7 +168,7 @@ class WordComparator:
             embeddings.append(embedding)
         
         if not embeddings:
-            logger.warning("No valid characters found, returning zero vector")
+            logger.warning("[WARNING] No valid characters found, returning zero vector")
             return np.zeros(self.word_embedding_dim)
         
         # Average all character embeddings
@@ -228,7 +262,7 @@ class WordComparator:
         file_path = os.path.join(data_dir, lang, "phonemes.txt")
         
         if not os.path.exists(file_path):
-            logger.warning(f"Phoneme file not found for {lang} at {file_path}")
+            logger.warning(f"[WARNING] Phoneme file not found for {lang} at {file_path}")
             return phoneme_dict
         
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -240,18 +274,16 @@ class WordComparator:
                     phonemes = ipa_str.split()
                     phoneme_dict[word] = phonemes
         
-        logger.info(f"Loaded {len(phoneme_dict)} words for {lang}")
+        logger.info(f"[INFO] Loaded {len(phoneme_dict)} words for {lang}")
         return phoneme_dict
     
     
-    def find_models_for_languages(self, lang1: str, lang2: str, data_dir: str) -> Tuple[str, str]:
+    def find_models_for_languages(self, languages: List[str], data_dir: str) -> Tuple[str, str]:
         """
-        Find phoneme and word models for the given language pair.
-        Models can contain more languages than requested (superset).
+        Find phoneme and word models covering the given list of languages.
         
         Args:
-            lang1: First language code
-            lang2: Second language code
+            languages: List of language codes
             data_dir: Data directory (used to locate models dir)
             
         Returns:
@@ -266,10 +298,10 @@ class WordComparator:
         models_dir = os.path.normpath(models_dir)
         
         if not os.path.exists(models_dir):
-            logger.warning(f"Models directory not found at {models_dir}")
+            logger.warning(f"[WARNING] Models directory not found at {models_dir}")
             return None
             
-        required_langs = {lang1, lang2}
+        required_langs = set(languages)
         
         # Find all potential model files
         candidates = []
@@ -329,15 +361,15 @@ class WordComparator:
                     best_match = (models['phonemes'], models['words'])
         
         if best_match:
-            logger.info(f"Found models covering {lang1} and {lang2}:")
-            logger.info(f"  Phoneme: {best_match[0]}")
-            logger.info(f"  Word: {best_match[1]}")
+            logger.info(f"[INFO] Found models covering {required_langs}:")
+            logger.info(f"[INFO]   Phoneme: {best_match[0]}")
+            logger.info(f"[INFO]   Word: {best_match[1]}")
             return best_match
                 
-        logger.warning(f"Could not find matching phoneme and word models for {lang1} and {lang2} in {models_dir}")
+        logger.warning(f"[WARNING] Could not find matching phoneme and word models covering {required_langs} in {models_dir}")
         return None
 
-    def compare_words(self, word1: str, lang1: str, word2: str, lang2: str, data_dir: str) -> Dict:
+    def compare_words(self, word1: str, lang1: str, word2: str, lang2: str, data_dir: str = 'data') -> Dict:
         """
         Compare two words from potentially different languages.
         
@@ -360,11 +392,11 @@ class WordComparator:
         phonemes2 = dict2.get(word2)
         
         if phonemes1 is None:
-            logger.error(f"Word '{word1}' not found in {lang1} dictionary")
+            logger.error(f"[ERROR] Word '{word1}' not found in {lang1} dictionary")
             return None
         
         if phonemes2 is None:
-            logger.error(f"Word '{word2}' not found in {lang2} dictionary")
+            logger.error(f"[ERROR] Word '{word2}' not found in {lang2} dictionary")
             return None
         
         # Compare
