@@ -10,7 +10,7 @@ from typing import Tuple, List, Dict
 
 from src.logger.logging_config import setup_logger
 from src.embedding_service.embeding.cbow import CBOWModel
-from src.embedding_service.run_train_data_pipeline import run_pipeline
+from src.embedding_service.data.data_pipeline import run_data_pipeline
 
 # Set up logger
 logger = setup_logger(__name__, "word_comparison.log")
@@ -53,7 +53,7 @@ class WordComparator:
             
             # Ensure data availability using data pipeline
             logger.info("[INFO] Ensuring phoneme data is available...")
-            run_data_pipeline(languages)
+            run_data_pipeline(languages=languages) # Changed from run_pipeline
             
             # Auto-discover models
             found_models = self.find_models_for_languages(languages, data_dir)
@@ -449,7 +449,7 @@ def run_word_comparison(word1: str, lang1: str, word2: str, lang2: str,
     if missing_langs:
         logger.info(f"Missing data for languages {missing_langs} in {data_dir}. Running pipeline.")
         try:
-            run_pipeline(languages=None)
+            run_data_pipeline(languages=list(missing_langs))
         except Exception as e:
             logger.error(f"Pipeline failed while preparing languages {missing_langs}: {e}")
             return
@@ -481,10 +481,10 @@ def run_word_comparison(word1: str, lang1: str, word2: str, lang2: str,
             
             if fname.startswith('cbow_phonemes_'):
                 m_type = 'phonemes'
-                prefix_len = 14
+                prefix_len = len('cbow_phonemes_') # Corrected prefix length
             elif fname.startswith('cbow_words_'):
                 m_type = 'words'
-                prefix_len = 11
+                prefix_len = len('cbow_words_') # Corrected prefix length
             else:
                 continue
                 
