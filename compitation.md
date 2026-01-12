@@ -15,9 +15,9 @@ Projekt **nie wspiera cross-kompilacji** (Linux → Windows).
 
 >  EXE musi być budowane **na systemie użytkowym**.
 
-### Wymagane narzędzia
-- Python **3.12**
-- `pip`
-- `git`
-
+## Kompilacja apki
+### Odpal venv
+- .venv\Scripts\activate
+### Zkompiluj 
+- python -m PyInstaller language_proximity_analysis.spec
 
