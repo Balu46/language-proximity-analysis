@@ -114,4 +114,9 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
     finally:
-        logger.info("Pipeline finished.")
+        logger.info("Pipeline finished.")if __name__ == "__main__":
+    # Parse command line arguments for languages
+    if len(sys.argv) > 1:
+        input_languages = sys.argv[1:]
+    else:
+        input_languages = None

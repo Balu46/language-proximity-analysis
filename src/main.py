@@ -1,65 +1,189 @@
 import os
-import networkx as nx
-import matplotlib.pyplot as plt
+from src.analysis_backend import (
+    run_levenshtein_analysis,
+    run_embedding_analysis
+)
+from deep_translator import GoogleTranslator
+from typing import List, Dict
 
-from src.utils.overall_similarity import add_connection
-from src.utils.file_utils import get_words_from_file, save_words_to_file, save_similarity_matrix
-from src.utils.translate import translate_words
-from src.utils.similarity import compute_similarity
-from src.utils.overall_similarity import diagonal_average
+# USUNIĘTO: BASE_LANGUAGE = "en" - nie ma już domyślnego języka
 
-# Config
-BASE_LANGUAGE = "en"  
-languages = ["en", "pl", "es", "fr", "de", "pt", "it", "sl", "sk", "sv"]
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-data_dir = os.path.join(BASE_DIR, "../data")
-results_dir = os.path.join(BASE_DIR, "../results")
-
-def main():
-    os.makedirs(f"{results_dir}/translations", exist_ok=True)
-    os.makedirs(f"{results_dir}/similarities", exist_ok=True)
-
-    for filename in os.listdir(data_dir):
-        if not filename.endswith(".txt"):
-            continue
-
-        topic = filename.replace(".txt", "")
-        print(f"\n=== Processing topic: {topic} ===")
-        G = nx.Graph() # Graph will be stored here
-        words = get_words_from_file(os.path.join(data_dir, filename))
-        print(f"Loaded {len(words)} words from {filename}")
-
-        translations = {}
-        for lang in languages:
-            if lang == BASE_LANGUAGE:
-                translations[lang] = words
-            else:
-                translations[lang] = translate_words(words, lang)
-
-        for lang, trans_words in translations.items():
-            save_words_to_file(trans_words, f"{results_dir}/translations/{topic}_{lang}.txt")
-
-        for i in range(len(languages)):
-            for j in range(i + 1, len(languages)):
-                lang1, lang2 = languages[i], languages[j]
-                matrix = [[compute_similarity(w1, w2) for w2 in translations[lang2]] for w1 in translations[lang1]]
-                save_similarity_matrix(translations[lang1], translations[lang2], matrix,
-                                       f"{results_dir}/similarities/{topic}_{lang1}_{lang2}.csv")
-                # Graph creating
-                outcome = diagonal_average(matrix) * 100
-                add_connection(G, lang1, lang2, f"{round(outcome, 2)}%")
-                pos = nx.spiral_layout(G)
-
-                nx.draw(G, pos, with_labels=True, node_color="lightblue", node_size=700)
-                nx.draw_networkx_edge_labels(G, pos, edge_labels=nx.get_edge_attributes(G, "label"),font_size=5, label_pos=0.6)
-
-                plt.title(f"{topic} related words similarity")
-                # Graph saving
-                plt.savefig(f"{results_dir}/graphs/{topic}_similarity_graph.png", format="png", dpi=300, bbox_inches="tight")
-                plt.close()
+DATA_DIR = os.path.join(BASE_DIR, "../data")
+RESULTS_DIR = os.path.join(BASE_DIR, "../results")
 
 
-    print("\n✅ All topics processed successfully!\nCheck results folder")
+def tlumacz_slowka(slowka: List[str], jezyki: List[str]) -> Dict[str, List[str]]:
+    """
+    Tłumaczy listę słów na wybrane języki.
 
+    Args:
+        slowka: Lista słów do przetłumaczenia
+        jezyki: Lista kodów języków docelowych
+
+    Returns:
+        Słownik z tłumaczeniami w formacie {język: [tłumaczenia]}
+    """
+    tlumaczenia = {}
+
+    for jezyk in jezyki:
+        try:
+            print(f"Tłumaczenie na {jezyk}...")
+            tlumaczone = []
+
+            for i, slowo in enumerate(slowka):
+                try:
+                    # Tłumaczenie każdego słowa
+                    tlumaczenie = GoogleTranslator(
+                        source="auto",
+                        target=jezyk
+                    ).translate(slowo)
+                    tlumaczone.append(tlumaczenie)
+
+                    # Wyświetlaj postęp co 10 słów
+                    if (i + 1) % 10 == 0:
+                        print(f"  Przetłumaczono {i + 1}/{len(slowka)} słów")
+                except Exception as e:
+                    print(f"  Błąd tłumaczenia '{slowo}' na {jezyk}: {e}")
+                    tlumaczone.append(f"(błąd: {slowo})")
+
+            tlumaczenia[jezyk] = tlumaczone
+            print(f"✓ Przetłumaczono na {jezyk}: {len(tlumaczone)} słów")
+
+        except Exception as e:
+            print(f"✗ Błąd podczas tłumaczenia na {jezyk}: {e}")
+            tlumaczenia[jezyk] = [f"(błąd tłumaczenia)" for _ in slowka]
+
+    return tlumaczenia
+
+
+def pokaz_tlumaczenia_gui(jezyki: List[str], kategoria: str = None):
+    """
+    Funkcja wywoływana przez GUI do wyświetlania tłumaczeń.
+
+    Args:
+        jezyki: Lista kodów języków
+        kategoria: Nazwa kategorii (opcjonalnie)
+    """
+    if not jezyki:
+        raise ValueError("Nie wybrano żadnych języków.")
+
+    # USUNIĘTO: automatyczne dodawanie języka angielskiego
+
+    # Wczytaj słówka z plików tematycznych
+    slowka = []
+    if kategoria:
+        plik = os.path.join(DATA_DIR, f"{kategoria}.txt")
+        if os.path.exists(plik):
+            with open(plik, "r", encoding="utf-8") as f:
+                slowka = [linia.strip() for linia in f if linia.strip()]
+
+    # Jeśli nie ma kategorii, użyj pierwszego dostępnego pliku
+    if not slowka:
+        for filename in os.listdir(DATA_DIR):
+            if filename.endswith(".txt"):
+                plik = os.path.join(DATA_DIR, filename)
+                with open(plik, "r", encoding="utf-8") as f:
+                    slowka = [linia.strip() for linia in f if linia.strip()]
+                break
+
+    if not slowka:
+        raise ValueError("Nie znaleziono plików z danymi w folderze data/")
+
+    print(f"Znaleziono {len(slowka)} słów")
+
+    # Przeprowadź tłumaczenie
+    return tlumacz_slowka(slowka, jezyki)
+
+
+def uruchom_analize(languages, method="levenshtein"):
+    """
+    Funkcja wywoływana przez GUI (oknoMAIN.py)
+
+    Args:
+        languages: Lista kodów języków z checkboxów
+        method: Metoda analizy ('levenshtein' lub 'embedding')
+    """
+    if not languages:
+        raise ValueError("Nie wybrano żadnych języków.")
+
+    # USUNIĘTO: automatyczne dodawanie języka angielskiego
+
+    if len(languages) < 2:
+        raise ValueError("Wybierz co najmniej dwa języki do analizy.")
+
+    print(f"Uruchamianie analizy dla języków: {languages}")
+    print(f"Metoda: {method}")
+
+    # Wybór języka bazowego - pierwszy z listy
+    base_language = languages[0]
+    print(f"Język bazowy: {base_language}")
+
+    if method == "embedding":
+        run_embedding_analysis(
+            languages=languages,
+            data_dir=DATA_DIR,
+            results_dir=RESULTS_DIR,
+            base_language=base_language  # Dynamiczny język bazowy
+        )
+    else:
+        run_levenshtein_analysis(
+            languages=languages,
+            data_dir=DATA_DIR,
+            results_dir=RESULTS_DIR,
+            base_language=base_language  # Dynamiczny język bazowy
+        )
+
+
+def get_available_categories() -> List[str]:
+    """
+    Zwraca listę dostępnych kategorii (plików txt w data/).
+
+    Returns:
+        Lista nazw kategorii
+    """
+    kategorie = []
+    for filename in os.listdir(DATA_DIR):
+        if filename.endswith(".txt"):
+            kategoria = filename.replace(".txt", "")
+            kategorie.append(kategoria)
+    return sorted(kategorie)
+
+
+def get_words_from_category(kategoria: str) -> List[str]:
+    """
+    Pobiera słowa z wybranej kategorii.
+
+    Args:
+        kategoria: Nazwa kategorii
+
+    Returns:
+        Lista słów z kategorii
+    """
+    plik = os.path.join(DATA_DIR, f"{kategoria}.txt")
+    if not os.path.exists(plik):
+        raise ValueError(f"Plik {plik} nie istnieje.")
+
+    with open(plik, "r", encoding="utf-8") as f:
+        slowka = [linia.strip() for linia in f if linia.strip()]
+
+    return slowka
+
+
+# Testowa funkcja do uruchomienia bezpośrednio
 if __name__ == "__main__":
-    main()
+    # Przykład użycia - dowolne języki
+    test_jezyki = ["pl", "de", "fr", "es"]  # Bez angielskiego
+    test_kategoria = "careers"
+
+    print("Test tłumaczenia...")
+    tlumaczenia = pokaz_tlumaczenia_gui(test_jezyki, test_kategoria)
+
+    # Wyświetl wyniki
+    print("\n=== TŁUMACZENIA ===")
+    for jezyk, slowa in tlumaczenia.items():
+        print(f"\n{jezyk.upper()}:")
+        for i, slowo in enumerate(slowa[:10]):  # Pierwsze 10 jako przykład
+            print(f"  {i + 1}. {slowo}")
+        if len(slowa) > 10:
+            print(f"  ... i {len(slowa) - 10} więcej")
