@@ -136,7 +136,10 @@ class WordComparator:
             return np.zeros(self.phoneme_embedding_dim)
         
         # Average all phoneme embeddings
-        return np.mean(embeddings, axis=0)
+        # return np.mean(embeddings, axis=0)
+        
+        embeddings = np.array(embeddings)
+        return np.max(embeddings, axis=0)
     
     def characters_to_embedding(self, characters: List[str]) -> np.ndarray:
         """
@@ -172,7 +175,10 @@ class WordComparator:
             return np.zeros(self.word_embedding_dim)
         
         # Average all character embeddings
-        return np.mean(embeddings, axis=0)
+        # return np.mean(embeddings, axis=0)
+    
+        embeddings = np.array(embeddings)
+        return np.max(embeddings, axis=0)
     
     def get_combined_embedding(self, word: str, phonemes: List[str]) -> np.ndarray:
         """

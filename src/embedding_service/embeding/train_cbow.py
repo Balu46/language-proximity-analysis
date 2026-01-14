@@ -92,8 +92,11 @@ def train_model(languages=None, data_type=None, batch_size=None):
     logger.info(f"Test sequences: {len(test_sequences)}")
     
     # Calculate maximum word length to use as window size
-    max_word_length = max(len(seq) for seq in sequences)
-    window_size = max_word_length + 2 # 2 for padding
+    # max_word_length = max(len(seq) for seq in sequences)
+    # window_size = max_word_length + 2 # 2 for padding
+    
+    window_size = 2 
+    
     logger.info(f"\nCalculated window size from max word length + padding: {window_size}")
     
     # Create CBOW datasets

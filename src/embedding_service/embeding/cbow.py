@@ -75,7 +75,7 @@ class CBOWDataset(Dataset):
             vocab: Optional vocabulary list. If provided, it will be used instead of building from sequences.
         """
         self.sequences = sequences
-        self.window_size = window_size
+        self.window_size = window_size * 2
         
         # Build vocabulary
         if vocab is not None:
@@ -137,6 +137,10 @@ class CBOWDataset(Dataset):
                 else:
                     continue # Skip if target is unknown and no UNK token
                     
+                context = context[:max_context_size]
+                while len(context) < max_context_size:
+                    context.append(padding_idx)
+                
                 data.append((context, target))
         
         return data
@@ -173,7 +177,7 @@ def train_cbow(model, dataset, val_dataset=None, epochs=10, batch_size=64, learn
         batch_size=batch_size,
         shuffle=True,
         num_workers=4,              
-        pin_memory=True,            
+        pin_memory=False,            
         persistent_workers=True,    
         prefetch_factor=4           
     )
@@ -185,7 +189,7 @@ def train_cbow(model, dataset, val_dataset=None, epochs=10, batch_size=64, learn
         batch_size=batch_size,
         shuffle=False,
         num_workers=4,             
-        pin_memory=True,           
+        pin_memory=False,           
         persistent_workers=True,   
         prefetch_factor=4           
     )
@@ -284,7 +288,7 @@ def evaluate_model(model, dataset, batch_size=64, device='cpu'):
         batch_size=batch_size,
         shuffle=False,
         num_workers=4,             
-        pin_memory=True,           
+        pin_memory=False,           
         persistent_workers=True,   
         prefetch_factor=4           
         )

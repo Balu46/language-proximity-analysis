@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-SESSION="training_lpa_session"
+SESSION="training_cbow"
 
 # Kill existing session
 if screen -list | grep -q "\.${SESSION}"; then
